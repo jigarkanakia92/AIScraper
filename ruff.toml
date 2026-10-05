@@ -1,0 +1,33 @@
+line-length = 100
+target-version = "py311"
+
+[lint]
+# Conservative rule set. We enable all "E/F" (pycodestyle/pyflakes),
+# plus a few opinionated ones, but disable noisy ones.
+select = [
+    "E",      # pycodestyle
+    "F",      # pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "B",      # bugbear
+    "UP",     # pyupgrade
+    "SIM",    # simplify
+    "PL",     # pylint
+    "RUF",    # ruff-specific
+]
+ignore = [
+    "E501",   # line length (handled by formatter)
+    "PLR0912", # too-many-branches (extractor tier logic has many elifs)
+    "PLR0913", # too-many-arguments (common in tests/fixtures)
+    "PLR2004", # magic value (fine in tests)
+    "B008",   # function call in default argument (Pydantic Field, FastAPI)
+    "B904",   # raise from — handled per-case
+    "SIM108", # ternary → if/else — readability choice
+    "UP042",  # str-enum: we use str + Enum for SQLAlchemy compatibility
+]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004", "S101", "S110", "BLE001", "PLC0415", "F401"]
+"app/db/migrations/**/*.py" = ["E", "F", "W", "I", "UP"]
+"app/scraper/extractors/*.py" = ["F401", "PLC0415"]  # lazy imports for optional deps
+"app/scraper/**/*.py" = ["PLC0415"]  # Crawl4AI / Playwright lazy-loaded

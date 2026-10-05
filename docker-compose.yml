@@ -1,0 +1,57 @@
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: aiscraper-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-aiscraper}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-aiscraper}
+      POSTGRES_DB: ${DB_NAME:-aiscraper}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aiscraper} -d ${DB_NAME:-aiscraper}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: aiscraper-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@aiscraper.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    profiles: ["dev"]
+    restart: unless-stopped
+
+  scraper-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aiscraper-app
+    env_file:
+      - .env
+    environment:
+      DB_HOST: postgres-db
+      DB_PORT: 5432
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    volumes:
+      - ./app/scraper/config/_samples:/app/app/scraper/config/_samples
+    restart: unless-stopped
+    # tini-like init is already baked into the image (dumb-init)
+    # Override command for one-off runs:
+    #   docker compose run --rm scraper-app python -m app.scraper.tools.refresh_selectors
+    command: ["python", "-m", "app.main"]
+
+volumes:
+  pgdata:
+    driver: local

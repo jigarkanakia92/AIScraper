@@ -1,0 +1,168 @@
+# selectors.yaml
+# ---------------------------------------------------------------
+# CSS / XPath selectors used by the Tier-7 BeautifulSoup fallback
+# extractor and as a last-resort Tier-4 meta-tag collector.
+#
+# IMPORTANT:
+#   * Never hardcode selectors in Python logic.  This file is the
+#     single source of truth for "what the live DOM looks like".
+#   * When Yahoo Finance changes their markup, the ONLY thing you
+#     need to touch is this file (+ crawl4ai_schema.json if you
+#     use Tier 3).
+#   * "best_effort: true"  -> the selector is a guess based on
+#     historical Yahoo patterns.  When the page restructures,
+#     refresh it via:  python -m app.scraper.tools.refresh_selectors
+#   * Each selector entry supports either:
+#         selector: "css"     +  css: "li.js-stream-content"
+#       or
+#         selector: "xpath"   +  xpath: "//h1[contains(@class,'title')]"
+# ---------------------------------------------------------------
+
+listing_page:
+  # Container elements — these are the *cards* in the topic stream.
+  card_container:
+    best_effort: true
+    selector: css
+    css: "li.js-stream-content, li[class*='stream-item']"
+  article_url:
+    best_effort: true
+    selector: css
+    css: "a[href*='/news/']"
+    attribute: href
+  preview_title:
+    best_effort: true
+    selector: css
+    css: "h3, h2, a > div:last-child"
+    attribute: text
+  preview_thumbnail_url:
+    best_effort: true
+    selector: css
+    css: "img"
+    attribute: src
+    optional: true
+  preview_timestamp:
+    best_effort: true
+    selector: css
+    css: "span[class*='time'], span[class*='publish'], footer span"
+    attribute: text
+    optional: true
+  source_publisher:
+    best_effort: true
+    selector: css
+    css: "span[class*='provider'], span[class*='source']"
+    attribute: text
+    optional: true
+
+  # Used by Stage-A scroll-and-wait logic
+  sentinel_selector:
+    best_effort: true
+    selector: css
+    css: "li.js-stream-content"
+
+article_page:
+  # Core article content
+  title:
+    best_effort: true
+    selector: css
+    css: "h1[data-test-l10n-id='title'], h1[class*='title'], h1"
+  full_content:
+    best_effort: true
+    selector: css
+    css: "div[data-test-l10n-id='article-content'] div[class*='body'] p, article p, div[class*='article'] p"
+  summary:
+    best_effort: true
+    selector: css
+    css: "meta[name='description']"
+    attribute: content
+    optional: true
+  authors:
+    best_effort: true
+    selector: css
+    css: "a[class*='byline'], span[class*='byline']"
+    attribute: text
+    multiple: true
+    optional: true
+  published_at:
+    best_effort: true
+    selector: css
+    css: "time[datetime], time"
+    attribute: datetime
+    optional: true
+  updated_at:
+    best_effort: true
+    selector: css
+    css: "time[class*='modified']"
+    attribute: datetime
+    optional: true
+  top_image_url:
+    best_effort: true
+    selector: css
+    css: "meta[property='og:image']"
+    attribute: content
+    optional: true
+  category:
+    best_effort: true
+    selector: css
+    css: "a[href*='/topic/']"
+    attribute: text
+    optional: true
+  source_publisher:
+    best_effort: true
+    selector: css
+    css: "div[class*='provider'] a, span[class*='provider']"
+    attribute: text
+    optional: true
+  related_tickers:
+    best_effort: true
+    selector: css
+    css: "a[href*='/quote/']"
+    attribute: text
+    multiple: true
+    transform: extract_ticker
+    optional: true
+
+  # OpenGraph / Twitter Card meta tags — used by Tier 4
+  meta_tags:
+    og_title:
+      selector: css
+      css: "meta[property='og:title']"
+      attribute: content
+    og_description:
+      selector: css
+      css: "meta[property='og:description']"
+      attribute: content
+    og_image:
+      selector: css
+      css: "meta[property='og:image']"
+      attribute: content
+    og_type:
+      selector: css
+      css: "meta[property='og:type']"
+      attribute: content
+    twitter_title:
+      selector: css
+      css: "meta[name='twitter:title']"
+      attribute: content
+    twitter_description:
+      selector: css
+      css: "meta[name='twitter:description']"
+      attribute: content
+    twitter_image:
+      selector: css
+      css: "meta[name='twitter:image']"
+      attribute: content
+    twitter_site:
+      selector: css
+      css: "meta[name='twitter:site']"
+      attribute: content
+
+  # CSS markers that suggest we've been bot-detected
+  bot_detection_markers:
+    - "#challenge-container"
+    - "iframe[src*='captcha']"
+    - "form#challenge-form"
+    - "div#px-captcha"
+    - "text=Pardon Our Interruption"
+    - "text=are you a robot"
+    - "text=Access Denied"
+    - "text=Please verify you are a human"
