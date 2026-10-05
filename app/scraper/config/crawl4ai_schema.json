@@ -1,0 +1,82 @@
+{
+  "_comment": "Crawl4AI JsonCssExtractionStrategy schemas. Edit when the DOM changes. Do NOT hardcode selectors in Python.",
+  "listing_schema": {
+    "name": "Yahoo Finance Stock Market News Listing",
+    "baseSelector": "li.js-stream-content, li[class*='stream-item']",
+    "fields": [
+      {
+        "name": "article_url",
+        "selector": "a[href*='/news/']",
+        "attribute": "href",
+        "type": "attribute"
+      },
+      {
+        "name": "preview_title",
+        "selector": "h3, h2",
+        "type": "text"
+      },
+      {
+        "name": "preview_thumbnail_url",
+        "selector": "img",
+        "attribute": "src",
+        "type": "attribute"
+      },
+      {
+        "name": "preview_timestamp",
+        "selector": "span[class*='time'], span[class*='publish']",
+        "type": "text"
+      },
+      {
+        "name": "source_publisher",
+        "selector": "span[class*='provider'], span[class*='source']",
+        "type": "text"
+      }
+    ]
+  },
+  "article_schema": {
+    "name": "Yahoo Finance Article Detail",
+    "baseSelector": "body",
+    "fields": [
+      {
+        "name": "title",
+        "selector": "h1[data-test-l10n-id='title'], h1",
+        "type": "text"
+      },
+      {
+        "name": "summary",
+        "selector": "meta[name='description']",
+        "attribute": "content",
+        "type": "attribute"
+      },
+      {
+        "name": "top_image_url",
+        "selector": "meta[property='og:image']",
+        "attribute": "content",
+        "type": "attribute"
+      },
+      {
+        "name": "published_at",
+        "selector": "time[datetime]",
+        "attribute": "datetime",
+        "type": "attribute"
+      },
+      {
+        "name": "source_publisher",
+        "selector": "div[class*='provider'] a, span[class*='provider']",
+        "type": "text"
+      },
+      {
+        "name": "tickers",
+        "selector": "a[href*='/quote/']",
+        "type": "text",
+        "multiple": true
+      },
+      {
+        "name": "full_content",
+        "selector": "div[class*='body'] p, article p",
+        "type": "text",
+        "multiple": true
+      }
+    ]
+  }
+}
