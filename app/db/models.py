@@ -19,6 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import (
     Enum as SAEnum,
@@ -52,6 +53,12 @@ class Article(Base):
         Index("ix_articles_category", "category"),
         Index("ix_articles_scraped_at", "scraped_at"),
         Index("ix_articles_status", "status"),
+        Index(
+            "ix_articles_title_published_at",
+            "title",
+            "published_at",
+            postgresql_where=text("title IS NOT NULL AND published_at IS NOT NULL"),
+        ),
         Index("ix_articles_related_tickers", "related_tickers", postgresql_using="gin"),
         Index("ix_articles_search_vector", "search_vector", postgresql_using="gin"),
     )
