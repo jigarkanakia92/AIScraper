@@ -80,8 +80,11 @@ class ScraperScheduler:
         with session_scope() as db:
             run_row = self._start_run(db, run_uuid, ScrapeStage.LISTING)
             try:
-                items = await self._listing.crawl()
-                pages += 1
+                # Stage A: paginated crawl with incremental cutoffs. The listing
+                # crawler reads DB state itself (newest article / empty-DB window)
+                # and stops pagination once it hits already-known content.
+                items = await self._listing.crawl(db)
+                pages = max(pages, 1)
                 fresh = self._listing.filter_fresh(items, db)
                 logger.info(
                     "Stage A → B: {n} articles queued ({d} dropped as already-fresh)",

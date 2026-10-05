@@ -43,8 +43,10 @@ listing_page:
   preview_timestamp:
     best_effort: true
     selector: css
-    css: "span[class*='time'], span[class*='publish'], footer span"
-    attribute: text
+    # Prefer the <time datetime="..."> attribute for an exact UTC timestamp;
+    # fall back to visible span text for relative times.
+    css: "time[datetime], span[class*='time'], span[class*='publish'], footer span"
+    attribute: datetime
     optional: true
   source_publisher:
     best_effort: true

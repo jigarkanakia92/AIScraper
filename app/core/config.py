@@ -119,6 +119,18 @@ class Settings(BaseSettings):
     recheck_window_hours: int = 12          # re-scrape an article if older than this
     force_refresh: bool = False
 
+    # ---------------------------------------------------------- Incremental crawl
+    # When the DB is empty, how far back to scrape (days from now).
+    initial_scrape_days: int = 3
+    # Yahoo Finance topic pages accept ?start=<offset> for pagination.
+    # Page 1 = offset 0, page 2 = offset page_size, etc.
+    pagination_page_size: int = 10
+    # Safety cap — stop after this many pages regardless of cutoff.
+    pagination_max_pages: int = 100
+    # Stop a paginated listing crawl early when we hit this many
+    # consecutive cards that are already known / older than cutoff.
+    pagination_stop_after_consecutive_old: int = 8
+
     # ------------------------------------------------------------- Extraction
     extraction_config_dir: str = str(PROJECT_ROOT / "app" / "scraper" / "config")
     selectors_file: str = "selectors.yaml"

@@ -63,15 +63,20 @@ RUN groupadd --system --gid 1000 appuser \
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY --chown=appuser:appuser . /app
-USER appuser
 
-# Install Playwright browsers (chromium only — fastest)
+# Entrypoint — set permissions BEFORE switching to non-root user.
+# (COPY preserves host permissions, which are typically 644 and not executable.)
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Install Playwright browsers (chromium only — fastest). Runs as root so the
+# browser cache is writable; Playwright installs to /ms-playwright by default.
 RUN python -m playwright install chromium 2>&1 | tail -5 || true
 
-# Entrypoint
-COPY --chown=appuser:appuser docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
-ENTRYPOINT ["/usr/bin/dumb-init", "--", "/app/docker-entrypoint.sh"]
+# Switch to non-root user AFTER chmod + playwright install.
+USER appuser
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
 
 # Healthcheck — curl a localhost status endpoint if you add one.
 # Here we just verify the process is alive (ps works) and that we can import.

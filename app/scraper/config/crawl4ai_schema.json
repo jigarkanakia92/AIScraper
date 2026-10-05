@@ -23,7 +23,13 @@
       },
       {
         "name": "preview_timestamp",
-        "selector": "span[class*='time'], span[class*='publish']",
+        "selector": "time",
+        "attribute": "datetime",
+        "type": "attribute"
+      },
+      {
+        "name": "preview_timestamp_text",
+        "selector": "time, span[class*='time'], span[class*='publish']",
         "type": "text"
       },
       {
