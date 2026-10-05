@@ -21,6 +21,7 @@ PostgreSQL.
 - [Updating selectors when Yahoo changes](#updating-selectors-when-yahoo-changes)
 - [Testing](#testing)
 - [Observability](#observability)
+- [Troubleshooting](#troubleshooting)
 - [Limitations & honest caveats](#limitations--honest-caveats)
 
 ---
@@ -195,7 +196,9 @@ fields but preserve `first_seen_at`.
 │   └── integration/
 ├── Dockerfile
 ├── docker-compose.yml
-├── docker-entrypoint.sh
+├── docker-entrypoint.sh        # LF-only; see Troubleshooting
+├── .dockerignore
+├── .gitattributes              # pins LF so Windows checkouts stay buildable
 ├── alembic.ini
 ├── requirements.txt
 ├── .env.example
@@ -226,9 +229,13 @@ docker compose logs -f scraper-app
 The `scraper-app` container:
 
 - waits for the DB healthcheck,
-- runs `alembic upgrade head`,
+- runs `alembic upgrade head` (set `SKIP_MIGRATIONS=1` to skip it),
 - starts APScheduler, which runs Stage A + Stage B immediately
   (configurable) and then every `SCHEDULER_INTERVAL_MINUTES` minutes.
+
+The image is built on **`python:3.14-slim`** (Debian 13 "trixie") and ships
+Chromium + its OS libraries for Crawl4AI/Playwright/Patchright, installed into
+`/ms-playwright` so the non-root `appuser` can use them.
 
 ---
 
@@ -295,7 +302,7 @@ matches. If you see that, refresh.
 # Inside the running container:
 docker compose exec scraper-app pytest
 
-# Or locally (Python 3.11+, with deps installed):
+# Or locally (Python 3.14+, with deps installed):
 pip install -r requirements.txt
 pytest
 ```
@@ -324,6 +331,89 @@ No live Yahoo dependency in CI — fixtures are committed in `tests/fixtures/`.
   article counts, rate-limit hits, cooldown events, full error list.
 - A summary line is logged at the end of every run:
   `=== Run <uuid> end: pages=N new=N dup=N fail=N cooldowns=N ===`.
+
+---
+
+## Troubleshooting
+
+### `[dumb-init] /usr/local/bin/docker-entrypoint.sh: No such file or directory`
+
+The file exists — the *shebang* is broken. On a Windows checkout (or any
+checkout with `core.autocrlf=true`) `docker-entrypoint.sh` gets CRLF line
+endings, so its first line becomes `#!/bin/sh\r`. The kernel cannot find that
+interpreter and reports ENOENT for the whole script; `dumb-init` prints it and
+`restart: unless-stopped` loops it forever.
+
+Handled twice over in this repo:
+
+- `.gitattributes` pins `*.sh` to LF, so a fresh clone is correct on any OS.
+- The Dockerfile strips stray CRs and validates the script while building:
+
+  ```dockerfile
+  RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+      && chmod 0755 /usr/local/bin/docker-entrypoint.sh \
+      && sh -n /usr/local/bin/docker-entrypoint.sh
+  ```
+
+If you pulled this fix over an existing broken checkout, rebuild without the
+stale layer:
+
+```bash
+git config core.autocrlf input      # optional, for local peace of mind
+docker compose build --no-cache scraper-app
+docker compose up -d
+```
+
+Quick sanity check inside the image:
+
+```bash
+docker compose run --rm --entrypoint sh scraper-app -c \
+  'head -1 /usr/local/bin/docker-entrypoint.sh | cat -A'
+# must print: #!/bin/sh$      (a trailing ^M$ means CRLF is still there)
+```
+
+### Postgres will not start after moving 15 → 16
+
+`postgres:16-alpine` cannot read a `pgdata` volume initialised by 15
+("database files are incompatible with server"). Dump and restore, or start
+clean:
+
+```bash
+docker compose exec -T postgres-db pg_dump -U aiscraper aiscraper > dump.sql
+docker compose down --remove-orphans
+docker compose up -d --build
+docker compose exec -T postgres-db psql -U aiscraper -d aiscraper < dump.sql
+```
+
+`docker compose down -v` also works if you do not need the existing rows.
+
+### `Executable doesn't exist at .../ms-playwright/...` at runtime
+
+Playwright's default browser cache is per-user (`~/.cache/ms-playwright`).
+Installing as root during the build and running as `appuser` therefore hides
+the browsers. The image avoids this by setting
+
+```dockerfile
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN crawl4ai-setup && chmod -R a+rX /ms-playwright
+```
+
+because `ENV` is applied *before* the install, so the download and the runtime
+lookup resolve to the same directory. Verify with:
+
+```bash
+docker compose exec scraper-app python -m crawl4ai.doctor --help 2>/dev/null || \
+docker compose exec scraper-app sh -c 'ls /ms-playwright'
+docker compose exec scraper-app craw4ai-doctor 2>/dev/null || true
+```
+
+### `E: Package 'libasound2' has no installation candidate`
+
+Debian 13 (trixie, the base of `python:3.14-slim`) renamed numerous libraries
+during the 64-bit `time_t` transition (`libasound2` → `libasound2t64`,
+`libgtk-3-0` → `libgtk-3-0t64`, ...). Hardcoded Chromium dependency lists
+break; this image instead calls `crawl4ai-setup`, i.e. Playwright's own
+`install --with-deps`, which maps those names per distribution.
 
 ---
 

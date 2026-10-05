@@ -1,6 +1,13 @@
 services:
   postgres-db:
-    image: postgres:15-alpine
+    # NOTE: PostgreSQL major versions are not data-compatible. A `pgdata` volume
+    # created by 15 will refuse to start under 16 with "database files are
+    # incompatible with server". Either start clean (`docker compose down -v`)
+    # or dump/restore:
+    #   docker compose exec -T postgres-db pg_dump -U aiscraper aiscraper > dump.sql
+    #   docker compose down && <bump the tag> && docker compose up -d
+    #   docker compose exec -T postgres-db psql -U aiscraper -d aiscraper < dump.sql
+    image: postgres:16-alpine
     container_name: aiscraper-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-aiscraper}
