@@ -1,23 +1,13 @@
 services:
   postgres-db:
-    # PostgreSQL major versions are NOT data-compatible: a data directory
-    # initialised by 15 makes 16 abort with
-    #   FATAL: database files are incompatible with server
-    # which surfaces as "dependency failed to start: container
-    # aiscraper-postgres is unhealthy" for every dependent service.
-    #
-    # The volume name therefore carries the major version on purpose: bumping
-    # the tag below pairs with a fresh, empty volume instead of a crash loop.
-    # To carry your existing rows over, run: scripts/pg-major-upgrade.sh
-    image: postgres:16-alpine
+    image: postgres:15-alpine
     container_name: aiscraper-postgres
     environment:
       POSTGRES_USER: ${DB_USER:-aiscraper}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-aiscraper}
       POSTGRES_DB: ${DB_NAME:-aiscraper}
     volumes:
-      # Version-scoped on purpose — see the comment on the image above.
-      - pgdata16:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -25,8 +15,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-      # First boot runs initdb; give it room before counting failures.
-      start_period: 30s
     restart: unless-stopped
 
   pgadmin:
@@ -65,9 +53,5 @@ services:
     command: ["python", "-m", "app.main"]
 
 volumes:
-  # Renamed from `pgdata` when the image moved to PostgreSQL 16. The old
-  # `pgdata` volume is intentionally left untouched (not deleted) so nothing is
-  # lost; migrate it with scripts/pg-major-upgrade.sh, then remove it with:
-  #   docker volume rm <project>_pgdata
-  pgdata16:
+  pgdata:
     driver: local

@@ -15,13 +15,14 @@ FROM python:3.14-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Build deps for the handful of C extensions (lxml, psycopg2, PyYAML, ...).
 # `cargo` is intentionally absent: every dependency in requirements.txt ships a
 # cp314-compatible wheel except jstyleson (pure Python, needs no compiler).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         gcc \
         libxml2-dev \
@@ -33,7 +34,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /build
 COPY requirements.txt .
-RUN python -m pip install --upgrade pip \
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m pip install --upgrade pip \
     && python -m pip install --prefix=/install -r requirements.txt
 
 
@@ -42,7 +44,6 @@ FROM python:3.14-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     DEBIAN_FRONTEND=noninteractive \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
@@ -50,7 +51,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Runtime libs for lxml / psycopg2 / libpq, plus init + CA roots.
 # Chromium's own shared libraries are installed further down (see comment).
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         libxml2 \
         libxslt1.1 \
         libpq5 \

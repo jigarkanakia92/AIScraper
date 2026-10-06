@@ -21,7 +21,6 @@ PostgreSQL.
 - [Updating selectors when Yahoo changes](#updating-selectors-when-yahoo-changes)
 - [Testing](#testing)
 - [Observability](#observability)
-- [Troubleshooting](#troubleshooting)
 - [Limitations & honest caveats](#limitations--honest-caveats)
 
 ---
@@ -196,11 +195,7 @@ fields but preserve `first_seen_at`.
 │   └── integration/
 ├── Dockerfile
 ├── docker-compose.yml
-├── docker-entrypoint.sh        # LF-only; see Troubleshooting
-├── scripts/
-│   └── pg-major-upgrade.sh     # dump & restore across a Postgres major bump
-├── .dockerignore
-├── .gitattributes              # pins LF so Windows checkouts stay buildable
+├── docker-entrypoint.sh
 ├── alembic.ini
 ├── requirements.txt
 ├── .env.example
@@ -231,13 +226,9 @@ docker compose logs -f scraper-app
 The `scraper-app` container:
 
 - waits for the DB healthcheck,
-- runs `alembic upgrade head` (set `SKIP_MIGRATIONS=1` to skip it),
+- runs `alembic upgrade head`,
 - starts APScheduler, which runs Stage A + Stage B immediately
   (configurable) and then every `SCHEDULER_INTERVAL_MINUTES` minutes.
-
-The image is built on **`python:3.14-slim`** (Debian 13 "trixie") and ships
-Chromium + its OS libraries for Crawl4AI/Playwright/Patchright, installed into
-`/ms-playwright` so the non-root `appuser` can use them.
 
 ---
 
@@ -304,7 +295,7 @@ matches. If you see that, refresh.
 # Inside the running container:
 docker compose exec scraper-app pytest
 
-# Or locally (Python 3.14+, with deps installed):
+# Or locally (Python 3.11+, with deps installed):
 pip install -r requirements.txt
 pytest
 ```
@@ -333,156 +324,6 @@ No live Yahoo dependency in CI — fixtures are committed in `tests/fixtures/`.
   article counts, rate-limit hits, cooldown events, full error list.
 - A summary line is logged at the end of every run:
   `=== Run <uuid> end: pages=N new=N dup=N fail=N cooldowns=N ===`.
-
----
-
-## Troubleshooting
-
-### `[dumb-init] /usr/local/bin/docker-entrypoint.sh: No such file or directory`
-
-The file exists — the *shebang* is broken. On a Windows checkout (or any
-checkout with `core.autocrlf=true`) `docker-entrypoint.sh` gets CRLF line
-endings, so its first line becomes `#!/bin/sh\r`. The kernel cannot find that
-interpreter and reports ENOENT for the whole script; `dumb-init` prints it and
-`restart: unless-stopped` loops it forever.
-
-Handled twice over in this repo:
-
-- `.gitattributes` pins `*.sh` to LF, so a fresh clone is correct on any OS.
-- The Dockerfile strips stray CRs and validates the script while building:
-
-  ```dockerfile
-  RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
-      && chmod 0755 /usr/local/bin/docker-entrypoint.sh \
-      && sh -n /usr/local/bin/docker-entrypoint.sh
-  ```
-
-If you pulled this fix over an existing broken checkout, rebuild without the
-stale layer:
-
-```bash
-git config core.autocrlf input      # optional, for local peace of mind
-docker compose build --no-cache scraper-app
-docker compose up -d
-```
-
-Quick sanity check inside the image:
-
-```bash
-docker compose run --rm --entrypoint sh scraper-app -c \
-  'head -1 /usr/local/bin/docker-entrypoint.sh | cat -A'
-# must print: #!/bin/sh$      (a trailing ^M$ means CRLF is still there)
-```
-
-### `dependency failed to start: container aiscraper-postgres is unhealthy`
-
-This is what a PostgreSQL **major version upgrade** looks like from the outside.
-The old data directory cannot be read by the new server, so it exits before its
-healthcheck ever passes and every dependent service fails:
-
-```
-dependency failed to start: container aiscraper-postgres is unhealthy
-```
-
-and, in `docker compose logs postgres-db`:
-
-```
-PostgreSQL Database directory appears to contain a database; Skipping initialization
-FATAL:  database files are incompatible with server
-DETAIL:  The data directory was initialized by PostgreSQL version 15, which is
-         not compatible with this version 16.x.
-```
-
-PostgreSQL never upgrades a data directory in place. The volume name in
-`docker-compose.yml` therefore carries the major version (`pgdata16`), so a
-version bump pairs with a fresh volume instead of a crash loop, and the old
-volume is left untouched. Pick one:
-
-**a) Start fresh** — fine here, the scraper re-populates itself:
-
-```bash
-docker compose up -d --build
-
-# once you are sure you don't want the old rows back:
-docker compose down && docker volume rm aiscraper_pgdata
-```
-
-**b) Keep the existing rows** — dump with a matching server, restore into the
-new cluster:
-
-```bash
-bash scripts/pg-major-upgrade.sh
-docker compose up -d --build
-```
-
-The script auto-detects the old volume and its `PG_VERSION`, starts a
-`postgres:<old>-alpine` container to dump it, brings up the new cluster, and
-restores. It **never deletes a volume**, writes a timestamped `.sql` backup to
-`pg_upgrade_backup/`, and refuses to overwrite a non-empty target unless you
-pass `FORCE=1`.
-
-> Do not try to restore into the new container while the old volume is still
-> attached: it cannot boot, so `docker compose exec postgres-db psql` has
-> nothing to connect to. That is exactly why the script detaches the old
-> volume first.
-
-### `Executable doesn't exist at .../ms-playwright/...` at runtime
-
-Playwright's default browser cache is per-user (`~/.cache/ms-playwright`).
-Installing as root during the build and running as `appuser` therefore hides
-the browsers. The image avoids this by setting
-
-```dockerfile
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN crawl4ai-setup && chmod -R a+rX /ms-playwright
-```
-
-because `ENV` is applied *before* the install, so the download and the runtime
-lookup resolve to the same directory. Verify with:
-
-```bash
-docker compose exec scraper-app python -m crawl4ai.doctor --help 2>/dev/null || \
-docker compose exec scraper-app sh -c 'ls /ms-playwright'
-docker compose exec scraper-app craw4ai-doctor 2>/dev/null || true
-```
-
-### `E: Package 'libasound2' has no installation candidate`
-
-Debian 13 (trixie, the base of `python:3.14-slim`) renamed numerous libraries
-during the 64-bit `time_t` transition (`libasound2` → `libasound2t64`,
-`libgtk-3-0` → `libgtk-3-0t64`, ...). Hardcoded Chromium dependency lists
-break; this image instead calls `crawl4ai-setup`, i.e. Playwright's own
-`install --with-deps`, which maps those names per distribution.
-
-### `invalid input value for enum scrape_stage: "LISTING"`
-
-The scraper starts, migrations complete, then the first scheduled run dies:
-
-```
-sqlalchemy.exc.DataError: (psycopg2.errors.InvalidTextRepresentation)
-invalid input value for enum scrape_stage: "LISTING"
-```
-
-SQLAlchemy's `Enum(SomeEnum)` persists the **Python member name** unless told
-otherwise, so `ScrapeStage.LISTING` was bound as `'LISTING'` while migration
-0001 creates the type with lowercase *values*
-(`scrape_stage` = `('listing', 'article')`). `articles.status` had the same
-defect — and there the label differs from the name entirely
-(`ArticleStatus.PARTIAL` → `"partial_extraction"`), so upper-casing would not
-have fixed it.
-
-The models now pass `values_callable=_enum_values`, which binds the values, and
-`tests/unit/test_enum_db_values.py` cross-checks the ORM against the migrations
-so the two cannot drift apart again.
-
-If you are running an image built before that fix, rebuild:
-
-```bash
-docker compose build --no-cache scraper-app && docker compose up -d
-```
-
-No database change is needed — the enum types were always correct; only the
-Python side was sending the wrong strings.
 
 ---
 
