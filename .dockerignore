@@ -1,0 +1,40 @@
+# Keep the build context small and, more importantly, keep secrets and local
+# state out of the image. `.env` is read by docker compose at *runtime*
+# (env_file), never baked into a layer.
+
+# VCS / tooling
+.git
+.gitignore
+.gitattributes
+.github
+
+# Secrets & local env (the example file is kept for reference)
+.env
+.env.*
+!.env.example
+
+# Python local state
+.venv
+venv
+env
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.egg-info
+
+# Editor / OS noise
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Generated runtime artifacts
+app/scraper/config/_samples
+pg_upgrade_backup
+*.log
+*.sql

@@ -32,3 +32,6 @@ dist/
 # App
 app/scraper/config/_samples/
 *.log
+
+# Database dumps from scripts/pg-major-upgrade.sh (may contain real data)
+pg_upgrade_backup/

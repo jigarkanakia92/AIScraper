@@ -19,7 +19,9 @@ pyyaml>=6.0.1
 # DB
 SQLAlchemy>=2.0.30
 alembic>=1.13.1
-psycopg2-binary>=2.9.9
+# 2.9.13 is the first release with cp314 wheels (Python 3.14 base image),
+# so the image installs a wheel instead of compiling psycopg2 from source.
+psycopg2-binary>=2.9.13
 
 # Validation / config
 pydantic>=2.7.0

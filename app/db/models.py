@@ -43,6 +43,24 @@ class ScrapeStage(str, enum.Enum):
     ARTICLE = "article"
 
 
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """Database labels for a Python enum: its *values*, not its member names.
+
+    SQLAlchemy's default for ``Enum(SomeEnum)`` is to persist the member name,
+    so ``ScrapeStage.LISTING`` would be sent as ``'LISTING'``. The Alembic
+    migrations create the PostgreSQL types with the lowercase values
+    (``scrape_stage`` = ``('listing', 'article')``), so binding names fails with::
+
+        psycopg2.errors.InvalidTextRepresentation:
+            invalid input value for enum scrape_stage: "LISTING"
+
+    Passing this as ``values_callable`` makes reads and writes agree with the
+    migrations (and with ``ArticleStatus.PARTIAL``, whose value
+    "partial_extraction" differs from its name entirely).
+    """
+    return [member.value for member in enum_cls]
+
+
 class Article(Base):
     """One row per unique article (deduplicated by source_url)."""
 
@@ -98,7 +116,7 @@ class Article(Base):
     # Provenance
     extraction_tier_used: Mapped[dict[str, str] | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[ArticleStatus] = mapped_column(
-        SAEnum(ArticleStatus, name="article_status"),
+        SAEnum(ArticleStatus, name="article_status", values_callable=_enum_values),
         nullable=False,
         default=ArticleStatus.SUCCESS,
     )
@@ -125,7 +143,7 @@ class ScrapeRun(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     run_uuid: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     stage: Mapped[ScrapeStage] = mapped_column(
-        SAEnum(ScrapeStage, name="scrape_stage"), nullable=False
+        SAEnum(ScrapeStage, name="scrape_stage", values_callable=_enum_values), nullable=False
     )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
