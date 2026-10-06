@@ -197,6 +197,8 @@ fields but preserve `first_seen_at`.
 ├── Dockerfile
 ├── docker-compose.yml
 ├── docker-entrypoint.sh        # LF-only; see Troubleshooting
+├── scripts/
+│   └── pg-major-upgrade.sh     # dump & restore across a Postgres major bump
 ├── .dockerignore
 ├── .gitattributes              # pins LF so Windows checkouts stay buildable
 ├── alembic.ini
@@ -372,20 +374,57 @@ docker compose run --rm --entrypoint sh scraper-app -c \
 # must print: #!/bin/sh$      (a trailing ^M$ means CRLF is still there)
 ```
 
-### Postgres will not start after moving 15 → 16
+### `dependency failed to start: container aiscraper-postgres is unhealthy`
 
-`postgres:16-alpine` cannot read a `pgdata` volume initialised by 15
-("database files are incompatible with server"). Dump and restore, or start
-clean:
+This is what a PostgreSQL **major version upgrade** looks like from the outside.
+The old data directory cannot be read by the new server, so it exits before its
+healthcheck ever passes and every dependent service fails:
 
-```bash
-docker compose exec -T postgres-db pg_dump -U aiscraper aiscraper > dump.sql
-docker compose down --remove-orphans
-docker compose up -d --build
-docker compose exec -T postgres-db psql -U aiscraper -d aiscraper < dump.sql
+```
+dependency failed to start: container aiscraper-postgres is unhealthy
 ```
 
-`docker compose down -v` also works if you do not need the existing rows.
+and, in `docker compose logs postgres-db`:
+
+```
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+FATAL:  database files are incompatible with server
+DETAIL:  The data directory was initialized by PostgreSQL version 15, which is
+         not compatible with this version 16.x.
+```
+
+PostgreSQL never upgrades a data directory in place. The volume name in
+`docker-compose.yml` therefore carries the major version (`pgdata16`), so a
+version bump pairs with a fresh volume instead of a crash loop, and the old
+volume is left untouched. Pick one:
+
+**a) Start fresh** — fine here, the scraper re-populates itself:
+
+```bash
+docker compose up -d --build
+
+# once you are sure you don't want the old rows back:
+docker compose down && docker volume rm aiscraper_pgdata
+```
+
+**b) Keep the existing rows** — dump with a matching server, restore into the
+new cluster:
+
+```bash
+bash scripts/pg-major-upgrade.sh
+docker compose up -d --build
+```
+
+The script auto-detects the old volume and its `PG_VERSION`, starts a
+`postgres:<old>-alpine` container to dump it, brings up the new cluster, and
+restores. It **never deletes a volume**, writes a timestamped `.sql` backup to
+`pg_upgrade_backup/`, and refuses to overwrite a non-empty target unless you
+pass `FORCE=1`.
+
+> Do not try to restore into the new container while the old volume is still
+> attached: it cannot boot, so `docker compose exec postgres-db psql` has
+> nothing to connect to. That is exactly why the script detaches the old
+> volume first.
 
 ### `Executable doesn't exist at .../ms-playwright/...` at runtime
 

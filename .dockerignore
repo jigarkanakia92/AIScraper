@@ -35,4 +35,6 @@ htmlcov
 
 # Generated runtime artifacts
 app/scraper/config/_samples
+pg_upgrade_backup
 *.log
+*.sql

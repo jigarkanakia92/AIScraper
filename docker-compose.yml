@@ -1,12 +1,14 @@
 services:
   postgres-db:
-    # NOTE: PostgreSQL major versions are not data-compatible. A `pgdata` volume
-    # created by 15 will refuse to start under 16 with "database files are
-    # incompatible with server". Either start clean (`docker compose down -v`)
-    # or dump/restore:
-    #   docker compose exec -T postgres-db pg_dump -U aiscraper aiscraper > dump.sql
-    #   docker compose down && <bump the tag> && docker compose up -d
-    #   docker compose exec -T postgres-db psql -U aiscraper -d aiscraper < dump.sql
+    # PostgreSQL major versions are NOT data-compatible: a data directory
+    # initialised by 15 makes 16 abort with
+    #   FATAL: database files are incompatible with server
+    # which surfaces as "dependency failed to start: container
+    # aiscraper-postgres is unhealthy" for every dependent service.
+    #
+    # The volume name therefore carries the major version on purpose: bumping
+    # the tag below pairs with a fresh, empty volume instead of a crash loop.
+    # To carry your existing rows over, run: scripts/pg-major-upgrade.sh
     image: postgres:16-alpine
     container_name: aiscraper-postgres
     environment:
@@ -14,7 +16,8 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-aiscraper}
       POSTGRES_DB: ${DB_NAME:-aiscraper}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Version-scoped on purpose — see the comment on the image above.
+      - pgdata16:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
@@ -22,6 +25,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      # First boot runs initdb; give it room before counting failures.
+      start_period: 30s
     restart: unless-stopped
 
   pgadmin:
@@ -60,5 +65,9 @@ services:
     command: ["python", "-m", "app.main"]
 
 volumes:
-  pgdata:
+  # Renamed from `pgdata` when the image moved to PostgreSQL 16. The old
+  # `pgdata` volume is intentionally left untouched (not deleted) so nothing is
+  # lost; migrate it with scripts/pg-major-upgrade.sh, then remove it with:
+  #   docker volume rm <project>_pgdata
+  pgdata16:
     driver: local
