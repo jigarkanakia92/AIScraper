@@ -454,6 +454,36 @@ during the 64-bit `time_t` transition (`libasound2` → `libasound2t64`,
 break; this image instead calls `crawl4ai-setup`, i.e. Playwright's own
 `install --with-deps`, which maps those names per distribution.
 
+### `invalid input value for enum scrape_stage: "LISTING"`
+
+The scraper starts, migrations complete, then the first scheduled run dies:
+
+```
+sqlalchemy.exc.DataError: (psycopg2.errors.InvalidTextRepresentation)
+invalid input value for enum scrape_stage: "LISTING"
+```
+
+SQLAlchemy's `Enum(SomeEnum)` persists the **Python member name** unless told
+otherwise, so `ScrapeStage.LISTING` was bound as `'LISTING'` while migration
+0001 creates the type with lowercase *values*
+(`scrape_stage` = `('listing', 'article')`). `articles.status` had the same
+defect — and there the label differs from the name entirely
+(`ArticleStatus.PARTIAL` → `"partial_extraction"`), so upper-casing would not
+have fixed it.
+
+The models now pass `values_callable=_enum_values`, which binds the values, and
+`tests/unit/test_enum_db_values.py` cross-checks the ORM against the migrations
+so the two cannot drift apart again.
+
+If you are running an image built before that fix, rebuild:
+
+```bash
+docker compose build --no-cache scraper-app && docker compose up -d
+```
+
+No database change is needed — the enum types were always correct; only the
+Python side was sending the wrong strings.
+
 ---
 
 ## Limitations & honest caveats
