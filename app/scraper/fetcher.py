@@ -190,9 +190,14 @@ class Fetcher:
             magic=self._settings.crawl4ai_magic,
         )
 
-        async def _run() -> FetchResult:
+        # ResilientRateLimiter.call passes the URL through to the wrapped
+        # callable so it can account for the request's domain.  Accept that
+        # argument here; omitting it makes every Crawl4AI request fail before
+        # the browser is even started ("_run() takes 0 positional arguments
+        # but 1 was given").
+        async def _run(_url: str) -> FetchResult:
             async with AsyncWebCrawler(config=browser_cfg) as crawler:
-                result = await crawler.arun(url=url, config=run_cfg)
+                result = await crawler.arun(url=_url, config=run_cfg)
             html = result.html or ""
             status = getattr(result, "status_code", 200) or 200
             await self._limiter.report_response(url, status=status, html=html)
